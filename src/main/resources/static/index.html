@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Biblioteca Pessoal</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav>
+    <h1>📚 Biblioteca Pessoal</h1>
+    <div>
+        <button class="btn btn-sm" onclick="abrirModal()" style="background:#3498db;color:white">+ Adicionar Livro</button>
+        <a href="#" onclick="logout()">Sair</a>
+    </div>
+</nav>
+
+<div class="container">
+
+    <div class="search-bar">
+        <input type="text" id="busca" placeholder="Buscar por título ou autor..." oninput="filtrar()">
+        <select id="filtrogenero" onchange="filtrar()">
+            <option value="">Todos os gêneros</option>
+        </select>
+        <select id="filtrolido" onchange="filtrar()">
+            <option value="">Todos</option>
+            <option value="false">Não lidos</option>
+            <option value="true">Lidos</option>
+        </select>
+    </div>
+
+    <div class="card">
+        <table>
+            <thead>
+            <tr>
+                <th>Título</th>
+                <th>Autor</th>
+                <th>Gênero</th>
+                <th>Ano</th>
+                <th>Avaliação</th>
+                <th>Status</th>
+                <th>Ações</th>
+            </tr>
+            </thead>
+            <tbody id="tabelaLivros">
+            <tr><td colspan="7" style="text-align:center;color:#999">Carregando...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal -->
+<div id="modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:100;overflow:auto">
+    <div style="background:white;max-width:500px;margin:3rem auto;border-radius:8px;padding:2rem">
+        <h2 id="modalTitulo">Adicionar Livro</h2>
+        <form id="formLivro" style="margin-top:1rem">
+            <input type="hidden" id="livroId">
+            <div class="form-group">
+                <label>Título *</label>
+                <input type="text" id="titulo" required>
+            </div>
+            <div class="form-group">
+                <label>Autor *</label>
+                <input type="text" id="autor" required>
+            </div>
+            <div class="form-group">
+                <label>ISBN *</label>
+                <input type="text" id="isbn" required>
+            </div>
+            <div class="form-group">
+                <label>Ano de Publicação *</label>
+                <input type="number" id="anoPublicacao" required min="1000" max="2099">
+            </div>
+            <div class="form-group">
+                <label>Gênero</label>
+                <input type="text" id="genero">
+            </div>
+            <div class="form-group">
+                <label>Descrição</label>
+                <textarea id="descricao"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Avaliação (1-5)</label>
+                <input type="number" id="avaliacao" min="1" max="5">
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="lido"> Já li este livro
+                </label>
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:1rem">
+                <button type="submit" class="btn btn-primary">Salvar</button>
+                <button type="button" class="btn" onclick="fecharModal()" style="background:#eee">Cancelar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    let todosLivros = [];
+
+    async function carregarLivros() {
+        const res = await fetch('/api/livros');
+        if (res.status === 401 || res.redirected) {
+            window.location.href = '/login.html';
+            return;
+        }
+        todosLivros = await res.json();
+        renderizarTabela(todosLivros);
+        atualizarGeneros(todosLivros);
+    }
+
+    function atualizarGeneros(livros) {
+        const generos = [...new Set(livros.map(l => l.genero).filter(Boolean))];
+        const sel = document.getElementById('filtrogenero');
+        sel.innerHTML = '<option value="">Todos os gêneros</option>';
+        generos.forEach(g => sel.innerHTML += `<option value="${g}">${g}</option>`);
+    }
+
+    function renderizarTabela(livros) {
+        const tbody = document.getElementById('tabelaLivros');
+        if (!livros.length) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999">Nenhum livro encontrado.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = livros.map(l => `
+            <tr>
+                <td>${l.titulo}</td>
+                <td>${l.autor}</td>
+                <td>${l.genero || '—'}</td>
+                <td>${l.anoPublicacao}</td>
+                <td>${l.avaliacao ? '⭐'.repeat(l.avaliacao) : '—'}</td>
+                <td><span class="badge ${l.lido ? 'badge-lido' : 'badge-nao-lido'}">${l.lido ? 'Lido' : 'Não lido'}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-primary" onclick="editarLivro('${l.id}')">Editar</button>
+                    <button class="btn btn-sm btn-danger" onclick="deletarLivro('${l.id}')">Excluir</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function filtrar() {
+        const busca = document.getElementById('busca').value.toLowerCase();
+        const genero = document.getElementById('filtrogenero').value;
+        const lido = document.getElementById('filtrolido').value;
+
+        const filtrados = todosLivros.filter(l => {
+            const matchBusca = l.titulo.toLowerCase().includes(busca) || l.autor.toLowerCase().includes(busca);
+            const matchGenero = !genero || l.genero === genero;
+            const matchLido = lido === '' || String(l.lido) === lido;
+            return matchBusca && matchGenero && matchLido;
+        });
+        renderizarTabela(filtrados);
+    }
+
+    function abrirModal() {
+        document.getElementById('formLivro').reset();
+        document.getElementById('livroId').value = '';
+        document.getElementById('modalTitulo').textContent = 'Adicionar Livro';
+        document.getElementById('modal').style.display = 'block';
+    }
+
+    function fecharModal() {
+        document.getElementById('modal').style.display = 'none';
+    }
+
+    async function editarLivro(id) {
+        const livro = todosLivros.find(l => l.id === id);
+        if (!livro) return;
+        document.getElementById('livroId').value = livro.id;
+        document.getElementById('titulo').value = livro.titulo;
+        document.getElementById('autor').value = livro.autor;
+        document.getElementById('isbn').value = livro.isbn;
+        document.getElementById('anoPublicacao').value = livro.anoPublicacao;
+        document.getElementById('genero').value = livro.genero || '';
+        document.getElementById('descricao').value = livro.descricao || '';
+        document.getElementById('avaliacao').value = livro.avaliacao || '';
+        document.getElementById('lido').checked = livro.lido;
+        document.getElementById('modalTitulo').textContent = 'Editar Livro';
+        document.getElementById('modal').style.display = 'block';
+    }
+
+    async function deletarLivro(id) {
+        if (!confirm('Tem certeza que deseja excluir este livro?')) return;
+        await fetch(`/api/livros/${id}`, { method: 'DELETE' });
+        carregarLivros();
+    }
+
+    document.getElementById('formLivro').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('livroId').value;
+        const body = {
+            titulo: document.getElementById('titulo').value,
+            autor: document.getElementById('autor').value,
+            isbn: document.getElementById('isbn').value,
+            anoPublicacao: parseInt(document.getElementById('anoPublicacao').value),
+            genero: document.getElementById('genero').value,
+            descricao: document.getElementById('descricao').value,
+            avaliacao: document.getElementById('avaliacao').value ? parseInt(document.getElementById('avaliacao').value) : null,
+            lido: document.getElementById('lido').checked
+        };
+
+        const url = id ? `/api/livros/${id}` : '/api/livros';
+        const method = id ? 'PUT' : 'POST';
+
+        const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        if (res.ok) {
+            fecharModal();
+            carregarLivros();
+        } else {
+            alert('Erro ao salvar livro. Verifique os campos.');
+        }
+    });
+
+    async function logout() {
+        await fetch('/api/logout', { method: 'POST' });
+        window.location.href = '/login.html';
+    }
+
+    carregarLivros();
+</script>
+
+</body>
+</html>
