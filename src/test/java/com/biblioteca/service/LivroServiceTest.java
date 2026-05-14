@@ -1,38 +1,37 @@
 package com.biblioteca.service;
 
+import com.biblioteca.config.MongoTestConfig;
 import com.biblioteca.model.Livro;
 import com.biblioteca.repository.LivroRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 
 import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
 
-@ExtendWith(MockitoExtension.class)
+@SpringBootTest
+@Import(MongoTestConfig.class)
 class LivroServiceTest {
 
-    @Mock
+    @Autowired
     private LivroRepository repository;
 
-    @InjectMocks
+    @Autowired
     private LivroService service;
 
     private Livro livroPadrao;
 
     @BeforeEach
     void setUp() {
+        repository.deleteAll();
         livroPadrao = new Livro();
-        livroPadrao.setId("1");
         livroPadrao.setTitulo("Clean Code");
         livroPadrao.setAutor("Robert C. Martin");
         livroPadrao.setIsbn("978-0132350884");
@@ -43,31 +42,37 @@ class LivroServiceTest {
 
     @Test
     void deveSalvarLivroComSucesso() {
-        when(repository.findByIsbn(livroPadrao.getIsbn())).thenReturn(Optional.empty());
-        when(repository.save(any(Livro.class))).thenAnswer(i -> i.getArguments()[0]);
-
         Livro salvo = service.salvar(livroPadrao);
 
-        assertNotNull(salvo);
+        assertNotNull(salvo.getId());
         assertEquals(livroPadrao.getIsbn(), salvo.getIsbn());
-        verify(repository).save(livroPadrao);
+        
+        Optional<Livro> noBanco = repository.findById(salvo.getId());
+        assertTrue(noBanco.isPresent());
     }
 
     @Test
     void naoDeveSalvarLivroComIsbnJaExistente() {
-        when(repository.findByIsbn(livroPadrao.getIsbn())).thenReturn(Optional.of(livroPadrao));
+        // Salva o primeiro livro
+        service.salvar(livroPadrao);
+
+        // Tenta salvar o segundo com o mesmo ISBN
+        Livro segundo = new Livro();
+        segundo.setTitulo("Outro Livro");
+        segundo.setAutor("Outro Autor");
+        segundo.setIsbn("978-0132350884"); // Mesma String
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            service.salvar(livroPadrao);
+            service.salvar(segundo);
         });
 
         assertTrue(exception.getMessage().contains("Já existe um livro com este ISBN"));
-        verify(repository, never()).save(any(Livro.class));
+        assertEquals(1, repository.findAll().size()); // Apenas 1 no banco
     }
 
     @Test
     void deveListarTodosOsLivros() {
-        when(repository.findAll()).thenReturn(List.of(livroPadrao));
+        service.salvar(livroPadrao);
 
         List<Livro> livros = service.listarTodos();
 
@@ -77,9 +82,9 @@ class LivroServiceTest {
 
     @Test
     void deveBuscarPorIdComSucesso() {
-        when(repository.findById("1")).thenReturn(Optional.of(livroPadrao));
+        Livro salvo = service.salvar(livroPadrao);
 
-        Optional<Livro> retornado = service.buscarPorId("1");
+        Optional<Livro> retornado = service.buscarPorId(salvo.getId());
 
         assertTrue(retornado.isPresent());
         assertEquals("Clean Code", retornado.get().getTitulo());
@@ -87,17 +92,17 @@ class LivroServiceTest {
 
     @Test
     void deveBuscarPorIsbn() {
-        when(repository.findByIsbn(livroPadrao.getIsbn())).thenReturn(Optional.of(livroPadrao));
+        service.salvar(livroPadrao);
 
-        Optional<Livro> retornado = service.buscarPorIsbn(livroPadrao.getIsbn());
+        Optional<Livro> retornado = service.buscarPorIsbn("978-0132350884");
 
         assertTrue(retornado.isPresent());
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Clean", "Code", "Clean Code"})
+    @ValueSource(strings = {"Clean", "Code", "Clean Code", "clean"})
     void deveBuscarPorTitulo(String titulo) {
-        when(repository.findByTituloContainingIgnoreCase(titulo)).thenReturn(List.of(livroPadrao));
+        service.salvar(livroPadrao);
 
         List<Livro> livros = service.buscarPorTitulo(titulo);
 
@@ -106,15 +111,14 @@ class LivroServiceTest {
 
     @Test
     void deveAtualizarLivroComSucesso() {
-        when(repository.findById("1")).thenReturn(Optional.of(livroPadrao));
-        when(repository.save(any(Livro.class))).thenAnswer(i -> i.getArguments()[0]);
+        Livro salvo = service.salvar(livroPadrao);
 
         Livro novosDados = new Livro();
         novosDados.setTitulo("Clean Architecture");
         novosDados.setAutor("Robert C. Martin");
         novosDados.setIsbn("111-222");
 
-        Livro atualizado = service.atualizar("1", novosDados);
+        Livro atualizado = service.atualizar(salvo.getId(), novosDados);
 
         assertNotNull(atualizado);
         assertEquals("Clean Architecture", atualizado.getTitulo());
@@ -123,31 +127,27 @@ class LivroServiceTest {
 
     @Test
     void deveLancarExcecaoAoAtualizarLivroInexistente() {
-        when(repository.findById("2")).thenReturn(Optional.empty());
-
         Livro novosDados = new Livro();
 
         assertThrows(RuntimeException.class, () -> {
-            service.atualizar("2", novosDados);
+            service.atualizar("id-invalido", novosDados);
         });
     }
 
     @Test
     void deveDeletarLivroComSucesso() {
-        when(repository.existsById("1")).thenReturn(true);
-        doNothing().when(repository).deleteById("1");
+        Livro salvo = service.salvar(livroPadrao);
 
-        assertDoesNotThrow(() -> service.deletar("1"));
-        verify(repository).deleteById("1");
+        assertDoesNotThrow(() -> service.deletar(salvo.getId()));
+        
+        Optional<Livro> deletado = repository.findById(salvo.getId());
+        assertFalse(deletado.isPresent());
     }
 
     @Test
     void deveLancarExcecaoAoDeletarLivroInexistente() {
-        when(repository.existsById("2")).thenReturn(false);
-
         assertThrows(RuntimeException.class, () -> {
-            service.deletar("2");
+            service.deletar("id-invalido");
         });
-        verify(repository, never()).deleteById(anyString());
     }
 }
