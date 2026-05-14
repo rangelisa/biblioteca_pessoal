@@ -3,32 +3,31 @@ package com.biblioteca.controller;
 import com.biblioteca.config.MongoTestConfig;
 import com.biblioteca.model.Livro;
 import com.biblioteca.repository.LivroRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import java.util.List;
 
-@SpringBootTest
-@AutoConfigureMockMvc
+import static org.junit.jupiter.api.Assertions.*;
+
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(MongoTestConfig.class)
 class LivroControllerTest {
 
     @Autowired
-    private MockMvc mockMvc;
+    private TestRestTemplate restTemplate;
 
     @Autowired
     private LivroRepository repository;
-
-    @Autowired
-    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
@@ -47,88 +46,114 @@ class LivroControllerTest {
     }
 
     @Test
-    void deveCriarLivroComSucesso() throws Exception {
+    void deveCriarLivroComSucesso() {
         Livro livro = criarLivro("Dom Casmurro", "Machado de Assis", "978-0-00-001");
 
-        mockMvc.perform(post("/api/livros")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(livro)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.titulo").value("Dom Casmurro"))
-                .andExpect(jsonPath("$.autor").value("Machado de Assis"));
+        ResponseEntity<Livro> response = restTemplate.postForEntity("/api/livros", livro, Livro.class);
+
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("Dom Casmurro", response.getBody().getTitulo());
     }
 
     @Test
-    void deveRetornarConflictParaIsbnDuplicado() throws Exception {
+    void deveRetornarConflictParaIsbnDuplicado() {
         Livro livro = criarLivro("Dom Casmurro", "Machado de Assis", "978-0-00-001");
         repository.save(livro);
 
-        mockMvc.perform(post("/api/livros")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(livro)))
-                .andExpect(status().isConflict());
+        ResponseEntity<String> response = restTemplate.postForEntity("/api/livros", livro, String.class);
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
     }
 
     @Test
-    void deveListarTodosOsLivros() throws Exception {
+    void deveListarTodosOsLivros() {
         repository.save(criarLivro("Livro A", "Autor A", "111"));
         repository.save(criarLivro("Livro B", "Autor B", "222"));
 
-        mockMvc.perform(get("/api/livros"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2));
+        ResponseEntity<List<Livro>> response = restTemplate.exchange(
+                "/api/livros",
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<List<Livro>>() {}
+        );
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(2, response.getBody().size());
     }
 
     @Test
-    void deveBuscarLivroPorId() throws Exception {
+    void deveBuscarLivroPorId() {
         Livro salvo = repository.save(criarLivro("O Alquimista", "Paulo Coelho", "333"));
 
-        mockMvc.perform(get("/api/livros/" + salvo.getId()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.titulo").value("O Alquimista"));
+        ResponseEntity<Livro> response = restTemplate.getForEntity("/api/livros/" + salvo.getId(), Livro.class);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("O Alquimista", response.getBody().getTitulo());
     }
 
     @Test
-    void deveRetornarNotFoundParaIdInexistente() throws Exception {
-        mockMvc.perform(get("/api/livros/id-inexistente"))
-                .andExpect(status().isNotFound());
+    void deveRetornarNotFoundParaIdInexistente() {
+        ResponseEntity<Livro> response = restTemplate.getForEntity("/api/livros/id-inexistente", Livro.class);
+
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
     }
 
     @Test
-    void deveAtualizarLivro() throws Exception {
+    void deveAtualizarLivro() {
         Livro salvo = repository.save(criarLivro("Título Antigo", "Autor", "444"));
         salvo.setTitulo("Título Novo");
 
-        mockMvc.perform(put("/api/livros/" + salvo.getId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(salvo)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.titulo").value("Título Novo"));
+        HttpEntity<Livro> requestUpdate = new HttpEntity<>(salvo);
+        ResponseEntity<Livro> response = restTemplate.exchange("/api/livros/" + salvo.getId(), HttpMethod.PUT, requestUpdate, Livro.class);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("Título Novo", response.getBody().getTitulo());
     }
 
     @Test
-    void deveDeletarLivro() throws Exception {
+    void deveDeletarLivro() {
         Livro salvo = repository.save(criarLivro("Para Deletar", "Autor", "555"));
 
-        mockMvc.perform(delete("/api/livros/" + salvo.getId()))
-                .andExpect(status().isNoContent());
+        ResponseEntity<Void> response = restTemplate.exchange("/api/livros/" + salvo.getId(), HttpMethod.DELETE, null, Void.class);
+
+        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
     }
 
     @Test
-    void deveBuscarPorTitulo() throws Exception {
+    void deveBuscarPorTitulo() {
         repository.save(criarLivro("Clean Code", "Robert Martin", "666"));
 
-        mockMvc.perform(get("/api/livros/buscar?titulo=Clean"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].titulo").value("Clean Code"));
+        ResponseEntity<List<Livro>> response = restTemplate.exchange(
+                "/api/livros/buscar?titulo=Clean",
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<List<Livro>>() {}
+        );
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(1, response.getBody().size());
+        assertEquals("Clean Code", response.getBody().get(0).getTitulo());
     }
 
     @Test
-    void deveBuscarPorAutor() throws Exception {
+    void deveBuscarPorAutor() {
         repository.save(criarLivro("Clean Code", "Robert Martin", "777"));
 
-        mockMvc.perform(get("/api/livros/buscar?autor=Robert"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].autor").value("Robert Martin"));
+        ResponseEntity<List<Livro>> response = restTemplate.exchange(
+                "/api/livros/buscar?autor=Robert",
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<List<Livro>>() {}
+        );
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(1, response.getBody().size());
+        assertEquals("Robert Martin", response.getBody().get(0).getAutor());
     }
 }
