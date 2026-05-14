@@ -21,12 +21,10 @@ jobs:
         distribution: 'temurin'
         cache: maven
 
-    - name: Start MongoDB via Docker
-      run: |
-        docker run -d -p 27017:27017 --name mongodb mongo:latest
-        
     - name: Build and Test with Maven
-      run: ./mvnw clean verify jacoco:report
+      run: |
+        chmod +x mvnw
+        ./mvnw clean verify jacoco:report
       
     - name: Upload JaCoCo Coverage Report
       uses: actions/upload-artifact@v3
