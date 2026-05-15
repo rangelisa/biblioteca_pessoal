@@ -8,11 +8,15 @@ import org.testcontainers.utility.DockerImageName;
 @TestConfiguration
 public class MongoTestConfig {
 
-    @Bean(destroyMethod = "stop")
-    public MongoDBContainer mongoDBContainer() {
-        MongoDBContainer container = new MongoDBContainer(DockerImageName.parse("mongo:6.0"));
+    private static final MongoDBContainer container = new MongoDBContainer(DockerImageName.parse("mongo:6.0"));
+
+    static {
         container.start();
         System.setProperty("spring.data.mongodb.uri", container.getReplicaSetUrl());
+    }
+
+    @Bean
+    public MongoDBContainer mongoDBContainer() {
         return container;
     }
 }
